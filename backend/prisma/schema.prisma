@@ -1,0 +1,336 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum TontineType {
+  PUBLIC
+  PRIVATE
+}
+
+enum TontineStatus {
+  PENDING
+  ACTIVE
+  CANCELLED
+  FINISHED
+}
+
+enum TontineFrequency {
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  QUARTERLY
+}
+
+enum MembershipStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  LEFT
+  SUSPENDED
+}
+
+enum MembershipRole {
+  MEMBER
+  ADMIN
+  CREATOR
+}
+
+enum ContributionStatus {
+  PAID
+  UNPAID
+  LATE
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  MOBILE_MONEY
+  CASH
+  CARD
+}
+
+enum MedicalRequestStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  DISBURSED
+}
+
+enum VoteChoice {
+  FOR
+  AGAINST
+  ABSTAIN
+}
+
+enum NotificationType {
+  TONTINE_INVITE
+  MEMBERSHIP_APPROVED
+  MEMBERSHIP_REJECTED
+  CONTRIBUTION_DUE
+  CONTRIBUTION_LATE
+  CONTRIBUTION_PAID
+  MEDICAL_REQUEST_CREATED
+  MEDICAL_REQUEST_APPROVED
+  MEDICAL_REQUEST_REJECTED
+  VOTE_OPENED
+  VOTE_CLOSED
+  PAYMENT_RECEIVED
+  PAYMENT_FAILED
+  SYSTEM
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  username          String    @unique
+  firstName         String
+  lastName          String
+  phone             String?
+  avatarUrl         String?
+  passwordHash      String
+  role              Role      @default(USER)
+  isEmailVerified   Boolean   @default(false)
+  isActive          Boolean   @default(true)
+  refreshToken      String?
+  resetPasswordToken String?
+  resetPasswordExpires DateTime?
+  lastLoginAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  ownedTontines     Tontine[] @relation("TontineOwner")
+  memberships       Membership[]
+  contributions     Contribution[]
+  payments          Payment[]
+  medicalRequests   MedicalRequest[]
+  votes             Vote[]
+  notifications     Notification[]
+  invitationsSent   Invitation[]    @relation("InvitationSender")
+  invitationsReceived Invitation[]  @relation("InvitationReceiver")
+
+  @@index([email])
+  @@index([username])
+  @@map("users")
+}
+
+model Tontine {
+  id                String          @id @default(cuid())
+  name              String
+  slug              String          @unique
+  description       String?
+  type              TontineType     @default(PUBLIC)
+  status            TontineStatus   @default(PENDING)
+  frequency         TontineFrequency @default(MONTHLY)
+  contributionAmount Decimal        @db.Decimal(15, 2)
+  currency          String          @default("XOF")
+  maxMembers        Int?
+  startDate         DateTime
+  endDate           DateTime?
+  rules             String?
+  coverImageUrl     String?
+  ownerId           String
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  // Relations
+  owner             User            @relation("TontineOwner", fields: [ownerId], references: [id])
+  memberships       Membership[]
+  contributions     Contribution[]
+  medicalRequests   MedicalRequest[]
+  invitations       Invitation[]
+  notifications     Notification[]
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([type])
+  @@map("tontines")
+}
+
+model Membership {
+  id          String           @id @default(cuid())
+  userId      String
+  tontineId   String
+  status      MembershipStatus @default(PENDING)
+  role        MembershipRole   @default(MEMBER)
+  joinedAt    DateTime?
+  leftAt      DateTime?
+  invitedById String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  // Relations
+  user        User             @relation(fields: [userId], references: [id])
+  tontine     Tontine          @relation(fields: [tontineId], references: [id])
+
+  @@unique([userId, tontineId])
+  @@index([userId])
+  @@index([tontineId])
+  @@index([status])
+  @@map("memberships")
+}
+
+model Invitation {
+  id          String    @id @default(cuid())
+  tontineId   String
+  senderId    String
+  receiverId  String?
+  email       String?
+  token       String    @unique @default(cuid())
+  accepted    Boolean?
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  tontine     Tontine   @relation(fields: [tontineId], references: [id])
+  sender      User      @relation("InvitationSender", fields: [senderId], references: [id])
+  receiver    User?     @relation("InvitationReceiver", fields: [receiverId], references: [id])
+
+  @@index([tontineId])
+  @@index([token])
+  @@map("invitations")
+}
+
+model Contribution {
+  id            String             @id @default(cuid())
+  userId        String
+  tontineId     String
+  amount        Decimal            @db.Decimal(15, 2)
+  currency      String             @default("XOF")
+  status        ContributionStatus @default(UNPAID)
+  dueDate       DateTime
+  paidAt        DateTime?
+  periodLabel   String
+  paymentId     String?            @unique
+  notes         String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  // Relations
+  user          User               @relation(fields: [userId], references: [id])
+  tontine       Tontine            @relation(fields: [tontineId], references: [id])
+  payment       Payment?           @relation(fields: [paymentId], references: [id])
+
+  @@index([userId])
+  @@index([tontineId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("contributions")
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  userId          String
+  amount          Decimal       @db.Decimal(15, 2)
+  currency        String        @default("XOF")
+  status          PaymentStatus @default(PENDING)
+  method          PaymentMethod @default(BANK_TRANSFER)
+  reference       String        @unique @default(cuid())
+  description     String?
+  transactionId   String?
+  failureReason   String?
+  processedAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  user            User          @relation(fields: [userId], references: [id])
+  contribution    Contribution?
+  medicalDisbursement MedicalRequest? @relation("DisbursementPayment")
+
+  @@index([userId])
+  @@index([status])
+  @@index([reference])
+  @@map("payments")
+}
+
+model MedicalRequest {
+  id              String               @id @default(cuid())
+  userId          String
+  tontineId       String
+  title           String
+  description     String
+  amount          Decimal              @db.Decimal(15, 2)
+  currency        String               @default("XOF")
+  status          MedicalRequestStatus @default(PENDING)
+  diagnosis       String?
+  hospitalName    String?
+  documentUrls    String[]
+  rejectionReason String?
+  disbursedAt     DateTime?
+  disbursementPaymentId String?        @unique
+  votingDeadline  DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  // Relations
+  user            User                 @relation(fields: [userId], references: [id])
+  tontine         Tontine              @relation(fields: [tontineId], references: [id])
+  votes           Vote[]
+  disbursementPayment Payment?         @relation("DisbursementPayment", fields: [disbursementPaymentId], references: [id])
+
+  @@index([userId])
+  @@index([tontineId])
+  @@index([status])
+  @@map("medical_requests")
+}
+
+model Vote {
+  id               String         @id @default(cuid())
+  userId           String
+  medicalRequestId String
+  choice           VoteChoice
+  comment          String?
+  createdAt        DateTime       @default(now())
+
+  // Relations
+  user             User           @relation(fields: [userId], references: [id])
+  medicalRequest   MedicalRequest @relation(fields: [medicalRequestId], references: [id])
+
+  @@unique([userId, medicalRequestId])
+  @@index([medicalRequestId])
+  @@map("votes")
+}
+
+model Notification {
+  id         String           @id @default(cuid())
+  userId     String
+  tontineId  String?
+  type       NotificationType
+  title      String
+  message    String
+  isRead     Boolean          @default(false)
+  data       Json?
+  createdAt  DateTime         @default(now())
+
+  // Relations
+  user       User             @relation(fields: [userId], references: [id])
+  tontine    Tontine?         @relation(fields: [tontineId], references: [id])
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}

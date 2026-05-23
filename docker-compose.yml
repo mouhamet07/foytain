@@ -1,0 +1,90 @@
+version: '3.9'
+
+services:
+  # ── PostgreSQL Database ──────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: foytain_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: foytain
+      POSTGRES_USER: foytain_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-foytain_pass_change_in_prod}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - foytain_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U foytain_user -d foytain"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Backend NestJS ───────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    container_name: foytain_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://foytain_user:${POSTGRES_PASSWORD:-foytain_pass_change_in_prod}@postgres:5432/foytain?schema=public
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_EXPIRATION: 15m
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
+      JWT_REFRESH_EXPIRATION: 7d
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      APP_URL: ${APP_URL:-http://localhost:3001}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USER: ${MAIL_USER}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      MAIL_FROM: ${MAIL_FROM:-noreply@foytain.com}
+      THROTTLE_TTL: 60000
+      THROTTLE_LIMIT: 100
+    ports:
+      - "3001:3001"
+    networks:
+      - foytain_net
+    # Always run migrations before starting (idempotent and fast after first run)
+    command: sh -c "npx prisma migrate deploy && node dist/main.js"
+
+  # ── Frontend Next.js ─────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: runner
+    container_name: foytain_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001/api/v1}
+      NEXT_PUBLIC_APP_NAME: Foytain
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+    ports:
+      - "3000:3000"
+    networks:
+      - foytain_net
+
+networks:
+  foytain_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local

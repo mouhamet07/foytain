@@ -1,0 +1,30 @@
+version: '3.9'
+
+# Development overrides — hot reload, local source mount
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  backend:
+    build:
+      target: builder
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/prisma:/app/prisma
+    environment:
+      NODE_ENV: development
+    command: >
+      sh -c "npx prisma migrate dev --name init && npm run start:dev"
+
+  frontend:
+    build:
+      target: deps
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    environment:
+      NODE_ENV: development
+    command: npm run dev

@@ -1,0 +1,6 @@
+# Force LF line endings for shell scripts (CRLF breaks shebangs on Linux)
+*.sh text eol=lf
+
+# Force LF for Docker-related files
+Dockerfile text eol=lf
+.dockerignore text eol=lf

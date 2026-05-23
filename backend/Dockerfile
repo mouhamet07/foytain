@@ -8,16 +8,13 @@ WORKDIR /app
 # Prisma + bcrypt native deps
 RUN apk add --no-cache openssl libc6-compat
 
-# Install dependencies (postinstall runs prisma generate automatically)
+# Install all dependencies (postinstall runs prisma generate)
 COPY package*.json ./
 COPY prisma ./prisma/
-
 RUN npm ci
 
-# Copy source
+# Copy source and build
 COPY . .
-
-# Build NestJS (prisma generate already ran via postinstall)
 RUN npm run build
 
 
@@ -30,32 +27,31 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Runtime dependencies
+# Runtime native deps
 RUN apk add --no-cache openssl libc6-compat
 
-# Install only production deps (postinstall runs prisma generate automatically)
+# Install production dependencies (postinstall runs prisma generate)
 COPY package*.json ./
 COPY prisma ./prisma/
-
 RUN npm ci --omit=dev
 
-# Copy build output
+# Copy compiled app and startup script
 COPY --from=builder /app/dist ./dist
+COPY start.sh ./start.sh
 
-# Create non-root user and add to nodejs group
+# Create non-root user (in nodejs group for consistent ownership)
 RUN addgroup -S nodejs && adduser -S nestjs -G nodejs
 
-# Fix permissions (IMPORTANT for Prisma on Render)
-RUN chown -R nestjs:nodejs /app
+# Transfer ownership and ensure start.sh is executable
+RUN chown -R nestjs:nodejs /app && chmod +x /app/start.sh
 
 USER nestjs
 
 EXPOSE 3001
 
-# Health check (Render compatible) — 120s start period for Neon cold starts
+# Health check — 120s start period covers Neon cold starts
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=5 \
   CMD wget -qO- http://localhost:${PORT:-3001}/api/v1/health || exit 1
 
-# Run migrations then start the app.
-# Uses direct binary (not npx) to avoid npx cache issues with system users.
-CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && node --max-old-space-size=256 dist/main.js"]
+# start.sh: validates DATABASE_URL, runs migrations, then exec node
+CMD ["/app/start.sh"]

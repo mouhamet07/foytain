@@ -1,7 +1,8 @@
-﻿import { NestFactory, Reflector } from '@nestjs/core';
-import { ValidationPipe, ClassSerializerInterceptor } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
+import { execSync } from 'child_process';
 import helmet from 'helmet';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
@@ -9,7 +10,30 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 
+function runMigrations(): void {
+  if (process.env.NODE_ENV !== 'production') return;
+
+  if (!process.env.DATABASE_URL) {
+    console.error('[migrations] DATABASE_URL is not set — aborting');
+    process.exit(1);
+  }
+
+  console.log('[migrations] Running prisma migrate deploy...');
+  try {
+    execSync('node_modules/.bin/prisma migrate deploy', {
+      stdio: 'inherit',
+      cwd: process.cwd(),
+    });
+    console.log('[migrations] Done');
+  } catch (err) {
+    console.error('[migrations] Failed:', err instanceof Error ? err.message : err);
+    process.exit(1);
+  }
+}
+
 async function bootstrap() {
+  runMigrations();
+
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log'],
   });
@@ -19,7 +43,6 @@ async function bootstrap() {
   const frontendUrl = configService.get<string>('FRONTEND_URL', 'http://localhost:3000');
   const nodeEnv = configService.get<string>('NODE_ENV', 'development');
 
-  // Security headers
   app.use(
     helmet({
       crossOriginEmbedderPolicy: nodeEnv === 'production',
@@ -27,13 +50,9 @@ async function bootstrap() {
     }),
   );
 
-  // Compression
   app.use(compression());
-
-  // Cookie parser
   app.use(cookieParser());
 
-  // CORS
   app.enableCors({
     origin: [frontendUrl, 'http://localhost:3000', 'http://localhost:3001'],
     credentials: true,
@@ -42,10 +61,8 @@ async function bootstrap() {
     exposedHeaders: ['X-Total-Count'],
   });
 
-  // Global prefix
   app.setGlobalPrefix('api/v1');
 
-  // Global validation pipe
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -56,13 +73,9 @@ async function bootstrap() {
     }),
   );
 
-  // Global exception filter
   app.useGlobalFilters(new HttpExceptionFilter());
-
-  // Global response transform interceptor
   app.useGlobalInterceptors(new TransformInterceptor());
 
-  // Swagger — only in non-production
   if (nodeEnv !== 'production') {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('Foytain API')
@@ -93,10 +106,7 @@ async function bootstrap() {
 
   await app.listen(port, '0.0.0.0');
 
-  if (nodeEnv !== 'production') {
-    console.log(`Foytain API → http://localhost:${port}/api/v1`);
-    console.log(`Swagger docs  → http://localhost:${port}/api/docs`);
-  }
+  console.log(`Foytain API listening on port ${port}`);
 }
 
 bootstrap().catch((err) => {

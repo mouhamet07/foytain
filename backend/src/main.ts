@@ -3,8 +3,8 @@ import { ValidationPipe, ClassSerializerInterceptor } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
-import * as compression from 'compression';
-import * as cookieParser from 'cookie-parser';
+import compression from 'compression';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
@@ -94,8 +94,8 @@ async function bootstrap() {
   await app.listen(port, '0.0.0.0');
 
   if (nodeEnv !== 'production') {
-    console.log(`🚀 Foytain API → http://localhost:${port}/api/v1`);
-    console.log(`📚 Swagger docs  → http://localhost:${port}/api/docs`);
+    console.log(`Foytain API → http://localhost:${port}/api/v1`);
+    console.log(`Swagger docs  → http://localhost:${port}/api/docs`);
   }
 }
 
